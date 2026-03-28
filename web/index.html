@@ -155,6 +155,30 @@
       </form>
     </dialog>
 
+    <dialog id="gemini-dialog" class="gemini-dialog">
+      <form method="dialog" class="gemini-dialog-card">
+        <div class="training-dialog-header">
+          <div>
+            <p class="eyebrow">Gemini Setup</p>
+            <h3>Connect Google Gemini</h3>
+          </div>
+          <button id="gemini-close-button" class="ghost-button" value="cancel">Close</button>
+        </div>
+
+        <p class="gemini-copy">This Gemini model needs a Google API key. Save it once and Gopher AI will use it right away.</p>
+
+        <label class="search-shell">
+          <span>Gemini API Key</span>
+          <input id="gemini-api-key-input" type="password" placeholder="AIza..." autocomplete="off" />
+        </label>
+
+        <div class="gemini-dialog-actions">
+          <button id="gemini-cancel-button" class="ghost-button" type="button">Cancel</button>
+          <button id="gemini-save-button" class="primary-button" type="button">Save and Use Gemini</button>
+        </div>
+      </form>
+    </dialog>
+
     <script src="/app.js" defer></script>
   </body>
 </html>

@@ -59,6 +59,11 @@ func NewService(cfg config.AppConfig, llamaClient *llama.Client, geminiClient *g
 	}
 }
 
+func (s *Service) Reconfigure(cfg config.AppConfig, geminiClient *gemini.Client) {
+	s.cfg = cfg
+	s.gemini = geminiClient
+}
+
 func (s *Service) GenerateAssistantReply(ctx context.Context, conversation chat.Chat, forceModel string) (Result, error) {
 	model, fallbackUsed, err := s.resolveModel(forceModel)
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gopher-ai/internal/attachments"
@@ -24,6 +25,7 @@ import (
 )
 
 type Server struct {
+	mu          sync.RWMutex
 	cfg         config.AppConfig
 	logger      *slog.Logger
 	chatStore   *storage.ChatStore
@@ -71,6 +73,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/app/bootstrap", s.handleBootstrap)
 	s.mux.HandleFunc("GET /api/system/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/system/quota", s.handleQuota)
+	s.mux.HandleFunc("POST /api/system/settings", s.handleSystemSettings)
 	s.mux.HandleFunc("GET /api/models", s.handleModels)
 	s.mux.HandleFunc("GET /api/training/status", s.handleTrainingStatus)
 	s.mux.HandleFunc("POST /api/training/manual", s.handleTrainingManual)
@@ -92,6 +95,8 @@ func (s *Server) registerRoutes() {
 }
 
 func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
+	cfg := s.currentConfig()
+
 	chats, err := s.chatStore.List(r.Context(), storage.ListOptions{
 		Limit: 20,
 	})
@@ -102,8 +107,8 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user": map[string]any{
-			"username": s.cfg.Username,
-			"theme":    s.cfg.Theme,
+			"username": cfg.Username,
+			"theme":    cfg.Theme,
 		},
 		"models": s.inference.Snapshot(r.Context()),
 		"quota":  s.quota.Snapshot(),
@@ -112,6 +117,7 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	cfg := s.currentConfig()
 	quota := s.quota.Snapshot()
 	snapshot := s.inference.Snapshot(r.Context())
 	geminiStatus := "requires_api_key"
@@ -127,7 +133,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			"gemini": geminiStatus,
 		},
 		"storage": map[string]any{
-			"root": s.cfg.Paths.Root,
+			"root": cfg.Paths.Root,
 		},
 		"quota": quota,
 	})
@@ -135,6 +141,53 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleQuota(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.quota.Snapshot())
+}
+
+func (s *Server) handleSystemSettings(w http.ResponseWriter, r *http.Request) {
+	cfg := s.currentConfig()
+
+	var req struct {
+		APIKeys *struct {
+			Gemini *string `json:"gemini"`
+		} `json:"apiKeys"`
+		Models *struct {
+			Primary *string `json:"primary"`
+		} `json:"models"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.APIKeys != nil && req.APIKeys.Gemini != nil {
+		cfg.APIKeys.Gemini = strings.TrimSpace(*req.APIKeys.Gemini)
+	}
+
+	if req.Models != nil && req.Models.Primary != nil {
+		value := strings.TrimSpace(*req.Models.Primary)
+		if value != "" {
+			cfg.Models.Primary = value
+		}
+	}
+
+	if err := cfg.Save(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var geminiClient *gemini.Client
+	if cfg.APIKeys.Gemini != "" {
+		geminiClient = gemini.NewClient(cfg.APIKeys.Gemini, cfg.Gemini.BaseURL, s.quota)
+	}
+
+	s.setConfig(cfg)
+	s.inference.Reconfigure(cfg, geminiClient)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"saved":  true,
+		"models": s.inference.Snapshot(r.Context()),
+		"quota":  s.quota.Snapshot(),
+	})
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
@@ -213,11 +266,13 @@ func (s *Server) handleTrainingApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.cfg.Llama.ActiveAdapterPath = adapterPath
-	if err := s.cfg.Save(); err != nil {
+	cfg := s.currentConfig()
+	cfg.Llama.ActiveAdapterPath = adapterPath
+	if err := cfg.Save(); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.setConfig(cfg)
 	if s.llama != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
@@ -231,6 +286,8 @@ func (s *Server) handleTrainingApply(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateChat(w http.ResponseWriter, r *http.Request) {
+	cfg := s.currentConfig()
+
 	var req struct {
 		Title string `json:"title"`
 		Model string `json:"model"`
@@ -242,7 +299,7 @@ func (s *Server) handleCreateChat(w http.ResponseWriter, r *http.Request) {
 
 	model := strings.TrimSpace(req.Model)
 	if model == "" {
-		model = s.cfg.Models.Primary
+		model = cfg.Models.Primary
 	}
 
 	value := chat.New(req.Title, model)
@@ -612,4 +669,16 @@ func firstFileHeader(form *multipart.Form) (*multipart.FileHeader, error) {
 	}
 
 	return nil, errors.New("missing file field")
+}
+
+func (s *Server) currentConfig() config.AppConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg
+}
+
+func (s *Server) setConfig(cfg config.AppConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg = cfg
 }

@@ -77,3 +77,54 @@ func TestBootstrapAndModelsEndpoints(t *testing.T) {
 		t.Fatalf("models response did not include local alias %q: %s", cfg.Llama.ModelAlias, modelsRes.Body.String())
 	}
 }
+
+func TestSystemSettingsUpdatesGeminiConfiguration(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "")
+
+	root := t.TempDir()
+	cfg := config.Default(root)
+	cfg.Training.AutoRun = false
+	if err := cfg.EnsureDirectories(); err != nil {
+		t.Fatalf("ensure directories: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	quotaTracker, err := gemini.NewRateLimiter(cfg.Paths.QuotaTrackingFile, gemini.Limits{
+		DailyQuota:   cfg.Gemini.DailyQuota,
+		RequestLimit: cfg.Gemini.RequestLimitDaily,
+		Cooldown:     time.Duration(cfg.Gemini.RequestCooldownSeconds) * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new quota tracker: %v", err)
+	}
+
+	chatStore := storage.NewChatStore(cfg.Paths.ChatsDir, cfg.Paths.TrashDir)
+	attachmentService := attachments.NewService(cfg.Paths.AttachmentsTempDir, cfg.Paths.AttachmentsMetaDir, cfg.Features.AttachmentMaxSize)
+	inferenceService := inference.NewService(cfg, nil, nil, logger)
+	trainingService := training.NewService(cfg, chatStore, nil, logger)
+	defer trainingService.Close()
+	server := NewServer(cfg, logger, chatStore, attachmentService, inferenceService, trainingService, nil, quotaTracker, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/system/settings", strings.NewReader(`{"apiKeys":{"gemini":"test-key"},"models":{"primary":"gemini-3.1-pro-preview"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("settings status: got %d want %d body=%s", res.Code, http.StatusOK, res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), `"geminiConfigured":true`) {
+		t.Fatalf("settings response did not mark gemini configured: %s", res.Body.String())
+	}
+
+	saved, err := config.Load(root)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if saved.APIKeys.Gemini != "test-key" {
+		t.Fatalf("saved gemini key = %q, want test-key", saved.APIKeys.Gemini)
+	}
+	if saved.Models.Primary != "gemini-3.1-pro-preview" {
+		t.Fatalf("saved primary model = %q", saved.Models.Primary)
+	}
+}

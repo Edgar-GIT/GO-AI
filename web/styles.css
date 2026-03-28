@@ -27,6 +27,7 @@
 
 html,
 body {
+  height: 100%;
   min-height: 100%;
 }
 
@@ -36,6 +37,7 @@ body {
   color: var(--text-color);
   background: var(--bg-gradient);
   overflow: hidden;
+  overflow-x: hidden;
 }
 
 body::before,
@@ -84,7 +86,8 @@ button {
 .app-shell {
   display: grid;
   grid-template-columns: minmax(300px, 360px) 1fr;
-  height: 100vh;
+  min-height: 100dvh;
+  height: 100dvh;
   gap: 1.25rem;
   padding: 1.25rem;
 }
@@ -104,6 +107,8 @@ button {
   flex-direction: column;
   gap: 1rem;
   padding: 1.2rem;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .brand-card {
@@ -211,6 +216,13 @@ button {
   padding: 1rem;
 }
 
+.chat-list-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .status-header,
 .section-title-row {
   display: flex;
@@ -232,7 +244,10 @@ button {
 .chat-list {
   overflow: auto;
   padding-right: 0.2rem;
-  max-height: calc(100vh - 29rem);
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overscroll-behavior: contain;
 }
 
 .chat-item {
@@ -275,8 +290,9 @@ button {
 
 .main-panel {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 0;
+  overflow: hidden;
 }
 
 .topbar,
@@ -296,6 +312,7 @@ button {
 .chat-view {
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .welcome-screen {
@@ -348,7 +365,15 @@ button {
 }
 
 .chat-view {
+  display: flex;
+  flex-direction: column;
   padding: 1.25rem;
+}
+
+.message-list {
+  flex: 1 1 auto;
+  min-height: min-content;
+  padding-bottom: 0.2rem;
 }
 
 .message {
@@ -466,6 +491,7 @@ button {
   gap: 0.8rem;
   border-top: 1px solid rgba(127, 254, 255, 0.12);
   background: linear-gradient(180deg, rgba(3, 20, 58, 0.76), rgba(2, 13, 40, 0.98));
+  min-height: 0;
 }
 
 .composer-toolbar {
@@ -618,6 +644,7 @@ button {
 .training-dialog {
   width: min(78rem, calc(100vw - 2rem));
   max-width: 78rem;
+  max-height: min(90dvh, 52rem);
   border: 1px solid rgba(127, 254, 255, 0.18);
   border-radius: 28px;
   padding: 0;
@@ -635,6 +662,8 @@ button {
   display: grid;
   gap: 1rem;
   padding: 1.2rem;
+  max-height: min(90dvh, 52rem);
+  overflow: auto;
 }
 
 .training-dialog-header,
@@ -693,6 +722,57 @@ button {
   line-height: 1.45;
 }
 
+.gemini-dialog {
+  width: min(30rem, calc(100vw - 2rem));
+  max-width: 30rem;
+  border: 1px solid rgba(127, 254, 255, 0.18);
+  border-radius: 28px;
+  padding: 0;
+  background: rgba(1, 11, 38, 0.98);
+  color: var(--text-color);
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.48);
+}
+
+.gemini-dialog::backdrop {
+  background: rgba(1, 6, 22, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.gemini-dialog-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.gemini-copy {
+  margin: 0;
+  color: var(--muted-text);
+  line-height: 1.6;
+}
+
+.gemini-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+*::-webkit-scrollbar {
+  width: 0.82rem;
+  height: 0.82rem;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(0, 9, 36, 0.42);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(0, 102, 255, 0.55), rgba(0, 255, 255, 0.45));
+  border-radius: 999px;
+  border: 2px solid rgba(0, 9, 36, 0.3);
+}
+
 @keyframes slide-up {
   from {
     opacity: 0;
@@ -727,32 +807,66 @@ button {
   }
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1120px) {
+  .app-shell {
+    grid-template-columns: minmax(260px, 320px) 1fr;
+  }
+
+  .quick-prompts {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 920px) {
   body {
     overflow: auto;
   }
 
   .app-shell {
     height: auto;
-    min-height: 100vh;
+    min-height: 100dvh;
     grid-template-columns: 1fr;
-  }
-
-  .chat-list {
-    max-height: 16rem;
   }
 
   .main-panel {
-    min-height: 72vh;
-  }
-
-  .quick-prompts {
-    grid-template-columns: 1fr;
+    min-height: 70dvh;
   }
 
   .training-grid,
   .training-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    overflow: visible;
+  }
+
+  .chat-list-panel {
+    min-height: 16rem;
+  }
+}
+
+@media (max-width: 700px) {
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .topbar-actions {
+    width: 100%;
+  }
+
+  .topbar-actions > button {
+    flex: 1 1 10rem;
+  }
+
+  .composer-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .gemini-dialog-actions > button {
+    flex: 1 1 12rem;
   }
 }
 
@@ -774,11 +888,37 @@ button {
     padding-right: 0.9rem;
   }
 
+  .brand-card {
+    padding: 0.85rem;
+  }
+
+  .brand-mark {
+    width: 2.9rem;
+    height: 2.9rem;
+    border-radius: 16px;
+  }
+
   .composer-row {
     grid-template-columns: 1fr;
   }
 
   .send-button {
     width: 100%;
+  }
+
+  .message,
+  .message.user {
+    grid-template-columns: 1fr;
+  }
+
+  .avatar,
+  .message.user .avatar {
+    display: none;
+  }
+
+  .training-dialog,
+  .gemini-dialog {
+    width: calc(100vw - 1rem);
+    max-width: calc(100vw - 1rem);
   }
 }

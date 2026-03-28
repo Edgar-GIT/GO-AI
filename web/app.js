@@ -7,6 +7,8 @@ const state = {
   pendingAttachments: [],
   sending: false,
   typingIndicator: null,
+  previousModelSelection: "gopher-ai",
+  pendingGeminiModel: null,
 };
 
 const elements = {
@@ -40,6 +42,11 @@ const elements = {
   trainingStartButton: document.querySelector("#training-start-button"),
   trainingRefreshButton: document.querySelector("#training-refresh-button"),
   trainingStatusList: document.querySelector("#training-status-list"),
+  geminiDialog: document.querySelector("#gemini-dialog"),
+  geminiCloseButton: document.querySelector("#gemini-close-button"),
+  geminiCancelButton: document.querySelector("#gemini-cancel-button"),
+  geminiSaveButton: document.querySelector("#gemini-save-button"),
+  geminiAPIKeyInput: document.querySelector("#gemini-api-key-input"),
   messageTemplate: document.querySelector("#message-template"),
 };
 
@@ -72,6 +79,17 @@ function bindEvents() {
   });
   elements.trainingRefreshButton.addEventListener("click", () => refreshTrainingStatus(true));
   elements.trainingStartButton.addEventListener("click", startManualTraining);
+  elements.modelSelect.addEventListener("focus", () => {
+    state.previousModelSelection = elements.modelSelect.value || state.previousModelSelection;
+  });
+  elements.modelSelect.addEventListener("change", handleModelSelectionChange);
+  elements.geminiCloseButton.addEventListener("click", () => closeGeminiDialog(false));
+  elements.geminiCancelButton.addEventListener("click", () => closeGeminiDialog(false));
+  elements.geminiSaveButton.addEventListener("click", saveGeminiAPIKey);
+  elements.geminiDialog.addEventListener("cancel", event => {
+    event.preventDefault();
+    closeGeminiDialog(false);
+  });
 
   elements.chatSearch.addEventListener("input", debounce(async event => {
     await refreshChats(event.target.value.trim());
@@ -164,7 +182,7 @@ function renderChatList() {
 
 async function createChat() {
   try {
-    const model = elements.modelSelect.value || state.bootstrap?.models?.primary || "local-llama";
+    const model = elements.modelSelect.value || state.bootstrap?.models?.primary || "gopher-ai";
     const chat = await api("/api/chats", {
       method: "POST",
       body: JSON.stringify({ model }),
@@ -304,12 +322,13 @@ function renderModels(modelsSnapshot) {
   const items = modelsSnapshot?.availableModels || [];
   elements.modelSelect.innerHTML = "";
   elements.modelStatusList.innerHTML = "";
+  state.previousModelSelection = modelsSnapshot?.primary || state.previousModelSelection || "gopher-ai";
 
   items.forEach(item => {
     const option = document.createElement("option");
     option.value = item.id;
     option.textContent = `${item.label} · ${item.status}`;
-    option.selected = item.id === (modelsSnapshot?.primary || "local-llama");
+    option.selected = item.id === (modelsSnapshot?.primary || "gopher-ai");
     elements.modelSelect.appendChild(option);
 
     const card = document.createElement("div");
@@ -323,6 +342,85 @@ function renderModels(modelsSnapshot) {
     `;
     elements.modelStatusList.appendChild(card);
   });
+}
+
+async function handleModelSelectionChange(event) {
+  const selectedModel = event.target.value || "gopher-ai";
+
+  if (isGeminiModel(selectedModel) && !state.bootstrap?.models?.geminiConfigured) {
+    openGeminiDialog(selectedModel);
+    return;
+  }
+
+  try {
+    await saveSystemSettings({ models: { primary: selectedModel } });
+    state.previousModelSelection = selectedModel;
+    setComposerStatus(`${modelLabel(selectedModel)} selected.`);
+  } catch (error) {
+    console.error(error);
+    elements.modelSelect.value = state.previousModelSelection || state.bootstrap?.models?.primary || "gopher-ai";
+    setComposerStatus(error.message || "Could not change the active model.");
+  }
+}
+
+function openGeminiDialog(selectedModel) {
+  state.pendingGeminiModel = selectedModel;
+  elements.geminiAPIKeyInput.value = "";
+  elements.geminiDialog.showModal();
+  window.setTimeout(() => elements.geminiAPIKeyInput.focus(), 30);
+}
+
+function closeGeminiDialog(saved) {
+  if (elements.geminiDialog.open) {
+    elements.geminiDialog.close();
+  }
+  state.pendingGeminiModel = null;
+  if (!saved) {
+    elements.modelSelect.value = state.previousModelSelection || state.bootstrap?.models?.primary || "gopher-ai";
+    setComposerStatus("Gemini selection cancelled.");
+  }
+}
+
+async function saveGeminiAPIKey() {
+  const apiKey = elements.geminiAPIKeyInput.value.trim();
+  const selectedModel = state.pendingGeminiModel || elements.modelSelect.value || "gopher-ai";
+
+  if (!apiKey) {
+    setComposerStatus("Enter a Gemini API key first.");
+    elements.geminiAPIKeyInput.focus();
+    return;
+  }
+
+  elements.geminiSaveButton.disabled = true;
+  try {
+    await saveSystemSettings({
+      apiKeys: { gemini: apiKey },
+      models: { primary: selectedModel },
+    });
+    state.previousModelSelection = selectedModel;
+    closeGeminiDialog(true);
+    setComposerStatus(`Gemini connected. ${modelLabel(selectedModel)} is ready.`);
+  } catch (error) {
+    console.error(error);
+    setComposerStatus(error.message || "Could not save the Gemini API key.");
+  } finally {
+    elements.geminiSaveButton.disabled = false;
+  }
+}
+
+async function saveSystemSettings(payload) {
+  const response = await api("/api/system/settings", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  state.bootstrap = state.bootstrap || {};
+  state.bootstrap.models = response.models;
+  state.bootstrap.quota = response.quota;
+  renderModels(response.models);
+  renderQuota(response.quota);
+
+  return response;
 }
 
 async function openTrainingDialog() {
@@ -635,4 +733,13 @@ function escapeClass(value) {
   return String(value || "")
     .replace(/[^a-zA-Z0-9_-]/g, "-")
     .toLowerCase();
+}
+
+function isGeminiModel(value) {
+  return String(value || "").startsWith("gemini-");
+}
+
+function modelLabel(modelID) {
+  const models = state.bootstrap?.models?.availableModels || [];
+  return models.find(item => item.id === modelID)?.label || modelID;
 }
