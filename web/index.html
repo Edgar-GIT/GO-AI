@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gopher AI</title>
+    <link rel="icon" href="/ai.ico" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-card">
+          <div class="brand-mark">GA</div>
+          <div>
+            <p class="eyebrow">Local-first AI</p>
+            <h1>Gopher AI</h1>
+          </div>
+        </div>
+
+        <button id="new-chat-button" class="primary-button">New Chat</button>
+
+        <label class="search-shell">
+          <span>Search chats</span>
+          <input id="chat-search" type="search" placeholder="Go, concurrency, game dev..." />
+        </label>
+
+        <section class="status-panel">
+          <div class="status-header">
+            <span>Inference</span>
+            <span id="quota-chip" class="status-chip">Quota sync</span>
+          </div>
+          <div id="model-status-list" class="status-list"></div>
+        </section>
+
+        <section class="chat-list-panel">
+          <div class="section-title-row">
+            <h2>Chats</h2>
+            <span id="chat-count" class="count-pill">0</span>
+          </div>
+          <div id="chat-list" class="chat-list"></div>
+        </section>
+      </aside>
+
+      <main class="main-panel">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Sleepy Dark Blue Aquarium</p>
+            <h2 id="main-title">Welcome to Gopher AI</h2>
+          </div>
+          <div class="topbar-actions">
+            <button id="train-chat-button" class="ghost-button">Train Chat</button>
+            <button id="training-center-button" class="ghost-button">Training</button>
+            <button id="refresh-button" class="ghost-button">Refresh</button>
+          </div>
+        </header>
+
+        <section id="welcome-screen" class="welcome-screen">
+          <div class="welcome-orb"></div>
+          <p class="eyebrow">Hi there</p>
+          <h3 id="welcome-title">Welcome to Gopher AI</h3>
+          <p id="welcome-subtitle" class="welcome-copy">What are we gonna do today?</p>
+          <div class="quick-prompts">
+            <button class="quick-prompt" data-prompt="Design a Go service for a real-time chat backend.">Design a Go backend</button>
+            <button class="quick-prompt" data-prompt="Explain goroutines vs threads with examples.">Explain Go concurrency</button>
+            <button class="quick-prompt" data-prompt="Review this architecture and point out the main risks.">Review architecture</button>
+            <button class="quick-prompt" data-prompt="Plan a mobile sync strategy for a local-first AI app.">Plan mobile sync</button>
+          </div>
+        </section>
+
+        <section id="chat-view" class="chat-view hidden">
+          <div id="message-list" class="message-list"></div>
+        </section>
+
+        <section class="composer-shell">
+          <div id="pending-attachments" class="pending-attachments"></div>
+          <div class="composer-toolbar">
+            <label class="model-picker">
+              <span>Model</span>
+              <select id="model-select"></select>
+            </label>
+            <label class="file-button ghost-button">
+              <input id="attachment-input" type="file" multiple />
+              <span>Attachment</span>
+            </label>
+          </div>
+          <div class="composer-row">
+            <textarea id="message-input" rows="1" placeholder="Type a message for Gopher AI..."></textarea>
+            <button id="send-button" class="send-button">Send</button>
+          </div>
+          <div class="composer-footer">
+            <span id="composer-status">Ready.</span>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <template id="message-template">
+      <article class="message">
+        <div class="avatar"></div>
+        <div class="message-card">
+          <div class="message-meta">
+            <span class="message-role"></span>
+            <span class="message-time"></span>
+          </div>
+          <div class="message-body"></div>
+          <div class="message-actions"></div>
+        </div>
+      </article>
+    </template>
+
+    <dialog id="training-dialog" class="training-dialog">
+      <form method="dialog" class="training-dialog-card">
+        <div class="training-dialog-header">
+          <div>
+            <p class="eyebrow">Manual Training</p>
+            <h3>Training Center</h3>
+          </div>
+          <button id="training-close-button" class="ghost-button" value="cancel">Close</button>
+        </div>
+
+        <div class="training-grid">
+          <section class="training-section">
+            <h4>Start Training</h4>
+            <p>Train the current chat into a LoRA adapter and auto-apply it when the run completes.</p>
+            <label class="search-shell">
+              <span>Base Model</span>
+              <input id="training-base-model" type="text" value="mistralai/Mistral-7B-Instruct-v0.3" />
+            </label>
+            <div class="training-form-grid">
+              <label class="search-shell">
+                <span>Epochs</span>
+                <input id="training-epochs" type="number" min="1" value="3" />
+              </label>
+              <label class="search-shell">
+                <span>Learning Rate</span>
+                <input id="training-learning-rate" type="number" min="0.000001" step="0.000001" value="0.0001" />
+              </label>
+              <label class="search-shell">
+                <span>Batch Size</span>
+                <input id="training-batch-size" type="number" min="1" value="1" />
+              </label>
+            </div>
+            <button id="training-start-button" class="primary-button" type="button">Train Current Chat</button>
+          </section>
+
+          <section class="training-section">
+            <div class="training-section-header">
+              <h4>Queue</h4>
+              <button id="training-refresh-button" class="ghost-button" type="button">Refresh</button>
+            </div>
+            <div id="training-status-list" class="training-status-list"></div>
+          </section>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>
