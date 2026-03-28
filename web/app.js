@@ -9,11 +9,16 @@ const state = {
   typingIndicator: null,
   previousModelSelection: "gopher-ai",
   pendingGeminiModel: null,
+  sidebarOpen: window.innerWidth > 960,
+  autoRefreshTimer: null,
 };
 
 const elements = {
+  appShell: document.querySelector("#app-shell"),
+  sidebar: document.querySelector("#sidebar"),
+  sidebarOverlay: document.querySelector("#sidebar-overlay"),
+  sidebarToggle: document.querySelector("#sidebar-toggle"),
   newChatButton: document.querySelector("#new-chat-button"),
-  refreshButton: document.querySelector("#refresh-button"),
   chatSearch: document.querySelector("#chat-search"),
   chatList: document.querySelector("#chat-list"),
   chatCount: document.querySelector("#chat-count"),
@@ -22,6 +27,7 @@ const elements = {
   welcomeSubtitle: document.querySelector("#welcome-subtitle"),
   welcomeScreen: document.querySelector("#welcome-screen"),
   chatView: document.querySelector("#chat-view"),
+  chatEmptyState: document.querySelector("#chat-empty-state"),
   messageList: document.querySelector("#message-list"),
   messageInput: document.querySelector("#message-input"),
   sendButton: document.querySelector("#send-button"),
@@ -30,7 +36,6 @@ const elements = {
   attachmentInput: document.querySelector("#attachment-input"),
   pendingAttachments: document.querySelector("#pending-attachments"),
   modelSelect: document.querySelector("#model-select"),
-  modelStatusList: document.querySelector("#model-status-list"),
   quotaChip: document.querySelector("#quota-chip"),
   composerStatus: document.querySelector("#composer-status"),
   trainingDialog: document.querySelector("#training-dialog"),
@@ -48,28 +53,45 @@ const elements = {
   geminiSaveButton: document.querySelector("#gemini-save-button"),
   geminiAPIKeyInput: document.querySelector("#gemini-api-key-input"),
   messageTemplate: document.querySelector("#message-template"),
+  quickPrompts: [...document.querySelectorAll(".quick-prompt")],
 };
 
 document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
+  applySidebarState();
+  handleViewportChange();
   loadBootstrap();
+  startAutoRefresh();
 });
 
 function bindEvents() {
-  elements.newChatButton.addEventListener("click", async () => {
-    const chat = await createChat();
-    if (chat) {
-      await openChat(chat.id);
-      elements.messageInput.focus();
+  window.addEventListener("resize", debounce(handleViewportChange, 120));
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      backgroundRefresh();
     }
   });
 
-  elements.refreshButton.addEventListener("click", async () => {
-    await refreshChats();
-    if (state.activeChatId) {
-      await openChat(state.activeChatId);
+  elements.sidebarToggle.addEventListener("click", () => {
+    setSidebarOpen(!state.sidebarOpen);
+  });
+  elements.sidebarOverlay.addEventListener("click", () => {
+    setSidebarOpen(false);
+  });
+
+  elements.newChatButton.addEventListener("click", async () => {
+    const chat = await createChat();
+    if (!chat) {
+      return;
     }
-    await refreshTrainingStatus(false);
+    state.activeChatId = chat.id;
+    state.activeChat = chat;
+    renderChatList();
+    renderActiveChat();
+    elements.messageInput.focus();
+    if (isNarrowLayout()) {
+      setSidebarOpen(false);
+    }
   });
 
   elements.trainChatButton.addEventListener("click", openTrainingDialog);
@@ -79,10 +101,12 @@ function bindEvents() {
   });
   elements.trainingRefreshButton.addEventListener("click", () => refreshTrainingStatus(true));
   elements.trainingStartButton.addEventListener("click", startManualTraining);
+
   elements.modelSelect.addEventListener("focus", () => {
     state.previousModelSelection = elements.modelSelect.value || state.previousModelSelection;
   });
   elements.modelSelect.addEventListener("change", handleModelSelectionChange);
+
   elements.geminiCloseButton.addEventListener("click", () => closeGeminiDialog(false));
   elements.geminiCancelButton.addEventListener("click", () => closeGeminiDialog(false));
   elements.geminiSaveButton.addEventListener("click", saveGeminiAPIKey);
@@ -93,7 +117,7 @@ function bindEvents() {
 
   elements.chatSearch.addEventListener("input", debounce(async event => {
     await refreshChats(event.target.value.trim());
-  }, 220));
+  }, 180));
 
   elements.messageInput.addEventListener("input", autoResizeTextarea);
   elements.messageInput.addEventListener("keydown", async event => {
@@ -106,7 +130,7 @@ function bindEvents() {
   elements.sendButton.addEventListener("click", sendMessage);
   elements.attachmentInput.addEventListener("change", handleAttachmentSelection);
 
-  document.querySelectorAll(".quick-prompt").forEach(button => {
+  elements.quickPrompts.forEach(button => {
     button.addEventListener("click", () => {
       elements.messageInput.value = button.dataset.prompt || "";
       autoResizeTextarea();
@@ -124,14 +148,19 @@ async function loadBootstrap() {
     renderBootstrap(data);
     renderChatList();
     await refreshTrainingStatus(false);
-    if (state.chats.length > 0) {
+
+    if (state.activeChatId && state.chats.some(chat => chat.id === state.activeChatId)) {
+      await openChat(state.activeChatId);
+    } else if (state.chats.length > 0) {
       await openChat(state.chats[0].id);
     } else {
       renderWelcome();
     }
+
     setComposerStatus("Ready.");
   } catch (error) {
     console.error(error);
+    renderWelcome();
     setComposerStatus("Could not load Gopher AI. Check whether the backend is running.");
   }
 }
@@ -149,6 +178,12 @@ async function refreshChats(search = elements.chatSearch.value.trim()) {
   const query = search ? `?search=${encodeURIComponent(search)}` : "";
   const data = await api(`/api/chats${query}`);
   state.chats = data.items || [];
+
+  if (!search && state.activeChatId && !state.chats.some(chat => chat.id === state.activeChatId)) {
+    state.activeChatId = null;
+    state.activeChat = null;
+  }
+
   renderChatList();
 }
 
@@ -157,23 +192,28 @@ function renderChatList() {
   elements.chatList.innerHTML = "";
 
   if (state.chats.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "message-empty";
-    empty.textContent = "No chats yet. Start a fresh conversation.";
+    const empty = document.createElement("div");
+    empty.className = "sidebar-empty";
+    empty.innerHTML = `
+      <div class="sidebar-empty-blob"><span class="assistant-blob"></span></div>
+      <strong>No chats yet</strong>
+      <span>Start a new conversation to see it here.</span>
+    `;
     elements.chatList.appendChild(empty);
     return;
   }
 
   state.chats.forEach(chat => {
     const button = document.createElement("button");
+    button.type = "button";
     button.className = "chat-item";
     if (chat.id === state.activeChatId) {
       button.classList.add("active");
     }
     button.innerHTML = `
       <div class="chat-item-title">${escapeHTML(chat.title || "New Chat")}</div>
-      <div class="chat-item-meta">${formatRelativeDate(chat.updatedAt)} · ${escapeHTML(chat.modelUsed || "No model")}</div>
-      <div class="chat-item-meta">${escapeHTML(chat.lastMessagePreview || "No messages yet")}</div>
+      <div class="chat-item-meta">${formatRelativeDate(chat.updatedAt)}</div>
+      <div class="chat-item-preview">${escapeHTML(chat.lastMessagePreview || "No messages yet")}</div>
     `;
     button.addEventListener("click", () => openChat(chat.id));
     elements.chatList.appendChild(button);
@@ -199,10 +239,14 @@ async function createChat() {
 async function openChat(chatId) {
   state.activeChatId = chatId;
   renderChatList();
+
   try {
     const chat = await api(`/api/chats/${chatId}`);
     state.activeChat = chat;
     renderActiveChat();
+    if (isNarrowLayout()) {
+      setSidebarOpen(false);
+    }
   } catch (error) {
     console.error(error);
     setComposerStatus(error.message || "Could not open chat.");
@@ -221,7 +265,17 @@ function renderActiveChat() {
   elements.mainTitle.textContent = chat.title || "New Chat";
   elements.messageList.innerHTML = "";
 
-  (chat.messages || []).forEach(message => {
+  const messages = chat.messages || [];
+  if (messages.length === 0) {
+    elements.chatEmptyState.classList.remove("hidden");
+    elements.messageList.classList.add("hidden");
+    return;
+  }
+
+  elements.chatEmptyState.classList.add("hidden");
+  elements.messageList.classList.remove("hidden");
+
+  messages.forEach(message => {
     elements.messageList.appendChild(buildMessageNode(message));
   });
 
@@ -229,20 +283,29 @@ function renderActiveChat() {
 }
 
 function renderWelcome() {
-  state.activeChat = null;
-  state.activeChatId = null;
-  elements.chatView.classList.add("hidden");
   elements.welcomeScreen.classList.remove("hidden");
+  elements.chatView.classList.add("hidden");
+  elements.chatEmptyState.classList.add("hidden");
+  elements.messageList.classList.remove("hidden");
   elements.mainTitle.textContent = "Welcome to Gopher AI";
-  renderChatList();
 }
 
 function buildMessageNode(message) {
   const fragment = elements.messageTemplate.content.cloneNode(true);
   const article = fragment.querySelector(".message");
+  const avatar = fragment.querySelector(".avatar");
   const role = message.role || "assistant";
-  article.classList.toggle("user", role === "user");
-  fragment.querySelector(".message-role").textContent = role === "assistant" ? (message.model || "assistant") : "you";
+
+  article.classList.add(role === "assistant" ? "assistant" : "user");
+
+  if (role === "assistant") {
+    avatar.innerHTML = `<span class="assistant-blob"></span>`;
+  } else {
+    avatar.classList.add("user-avatar");
+    avatar.textContent = userInitials();
+  }
+
+  fragment.querySelector(".message-role").textContent = role === "assistant" ? modelLabel(message.model || state.bootstrap?.models?.primary || "gopher-ai") : "You";
   fragment.querySelector(".message-time").textContent = formatTime(message.timestamp);
   fragment.querySelector(".message-body").appendChild(renderMessageContent(message.content || ""));
 
@@ -253,6 +316,7 @@ function buildMessageNode(message) {
   const actions = fragment.querySelector(".message-actions");
   if (message.content) {
     const copyButton = document.createElement("button");
+    copyButton.type = "button";
     copyButton.className = "copy-button";
     copyButton.textContent = "Copy";
     copyButton.addEventListener("click", async () => {
@@ -321,26 +385,16 @@ function renderAttachments(attachments) {
 function renderModels(modelsSnapshot) {
   const items = modelsSnapshot?.availableModels || [];
   elements.modelSelect.innerHTML = "";
-  elements.modelStatusList.innerHTML = "";
   state.previousModelSelection = modelsSnapshot?.primary || state.previousModelSelection || "gopher-ai";
 
   items.forEach(item => {
     const option = document.createElement("option");
     option.value = item.id;
-    option.textContent = `${item.label} · ${item.status}`;
-    option.selected = item.id === (modelsSnapshot?.primary || "gopher-ai");
+    option.textContent = item.provider === "gemini" && item.status === "requires_api_key"
+      ? `${item.label} · setup required`
+      : item.label;
+    option.selected = item.id === state.previousModelSelection;
     elements.modelSelect.appendChild(option);
-
-    const card = document.createElement("div");
-    card.className = "status-item";
-    card.innerHTML = `
-      <div class="status-item-title">
-        <strong>${escapeHTML(item.label)}</strong>
-        <span class="status-state ${escapeClass(item.status)}">${escapeHTML(item.status)}</span>
-      </div>
-      <div class="status-item-copy">${escapeHTML(item.provider)} · ${escapeHTML(item.tier)} · ${escapeHTML(item.lifecycle)}</div>
-    `;
-    elements.modelStatusList.appendChild(card);
   });
 }
 
@@ -367,18 +421,20 @@ function openGeminiDialog(selectedModel) {
   state.pendingGeminiModel = selectedModel;
   elements.geminiAPIKeyInput.value = "";
   elements.geminiDialog.showModal();
-  window.setTimeout(() => elements.geminiAPIKeyInput.focus(), 30);
+  window.setTimeout(() => elements.geminiAPIKeyInput.focus(), 40);
 }
 
 function closeGeminiDialog(saved) {
   if (elements.geminiDialog.open) {
     elements.geminiDialog.close();
   }
-  state.pendingGeminiModel = null;
+
   if (!saved) {
     elements.modelSelect.value = state.previousModelSelection || state.bootstrap?.models?.primary || "gopher-ai";
     setComposerStatus("Gemini selection cancelled.");
   }
+
+  state.pendingGeminiModel = null;
 }
 
 async function saveGeminiAPIKey() {
@@ -513,6 +569,17 @@ function renderQuota(quota) {
   elements.quotaChip.textContent = limit ? `${used} / ${limit} tokens` : "Quota unavailable";
 }
 
+async function refreshQuota() {
+  try {
+    const quota = await api("/api/system/quota");
+    state.bootstrap = state.bootstrap || {};
+    state.bootstrap.quota = quota;
+    renderQuota(quota);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
 async function sendMessage() {
   if (state.sending) {
     return;
@@ -531,7 +598,10 @@ async function sendMessage() {
       return;
     }
     chatId = chat.id;
-    state.activeChatId = chatId;
+    state.activeChatId = chat.id;
+    state.activeChat = chat;
+    renderChatList();
+    renderActiveChat();
   }
 
   state.sending = true;
@@ -552,14 +622,16 @@ async function sendMessage() {
     });
 
     state.activeChat = response.chat;
+    state.activeChatId = response.chat?.id || chatId;
     elements.messageInput.value = "";
     state.pendingAttachments = [];
     elements.attachmentInput.value = "";
     autoResizeTextarea();
     renderPendingAttachments();
     await refreshChats();
+    await refreshQuota();
     renderActiveChat();
-    renderQuota(state.bootstrap?.quota);
+
     if (response.trainingTask?.taskId) {
       setComposerStatus(`Reply ready via ${response.modelUsed}. Training queued: ${response.trainingTask.taskId}.`);
     } else {
@@ -567,6 +639,9 @@ async function sendMessage() {
     }
   } catch (error) {
     console.error(error);
+    if (isGeminiModel(elements.modelSelect.value) && !state.bootstrap?.models?.geminiConfigured) {
+      openGeminiDialog(elements.modelSelect.value);
+    }
     setComposerStatus(error.message || "Could not send message.");
   } finally {
     removeTypingIndicator();
@@ -604,6 +679,7 @@ async function handleAttachmentSelection(event) {
 
 function renderPendingAttachments() {
   elements.pendingAttachments.innerHTML = "";
+
   state.pendingAttachments.forEach(attachment => {
     const card = document.createElement("div");
     card.className = "pending-attachment";
@@ -633,22 +709,31 @@ function updateSendingState() {
 
 function showTypingIndicator() {
   removeTypingIndicator();
+  elements.welcomeScreen.classList.add("hidden");
+  elements.chatView.classList.remove("hidden");
+  elements.chatEmptyState.classList.add("hidden");
+  elements.messageList.classList.remove("hidden");
+
   const indicator = document.createElement("article");
-  indicator.className = "message";
+  indicator.className = "message assistant typing";
   indicator.id = "typing-indicator";
   indicator.innerHTML = `
-    <div class="avatar"></div>
+    <div class="avatar"><span class="assistant-blob assistant-blob-live"></span></div>
     <div class="message-card">
       <div class="message-meta">
-        <span class="message-role">gopher ai</span>
+        <span class="message-role">Gopher-AI</span>
         <span class="message-time">now</span>
       </div>
-      <div class="typing-indicator"><span></span><span></span><span></span></div>
+      <div class="typing-indicator">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
     </div>
   `;
   elements.messageList.appendChild(indicator);
-  scrollMessagesToBottom();
   state.typingIndicator = indicator;
+  scrollMessagesToBottom();
 }
 
 function removeTypingIndicator() {
@@ -657,7 +742,9 @@ function removeTypingIndicator() {
 }
 
 function scrollMessagesToBottom() {
-  elements.chatView.scrollTop = elements.chatView.scrollHeight;
+  window.requestAnimationFrame(() => {
+    elements.chatView.scrollTop = elements.chatView.scrollHeight;
+  });
 }
 
 function autoResizeTextarea() {
@@ -667,6 +754,84 @@ function autoResizeTextarea() {
 
 function setComposerStatus(message) {
   elements.composerStatus.textContent = message;
+}
+
+function startAutoRefresh() {
+  window.clearInterval(state.autoRefreshTimer);
+  state.autoRefreshTimer = window.setInterval(backgroundRefresh, 8000);
+}
+
+async function backgroundRefresh() {
+  if (document.hidden || state.sending || elements.trainingDialog.open || elements.geminiDialog.open) {
+    return;
+  }
+
+  try {
+    const previousSignature = chatSignature(state.activeChat);
+    await refreshChats(elements.chatSearch.value.trim());
+
+    if (!state.activeChatId) {
+      if (state.chats.length === 0) {
+        renderWelcome();
+      }
+      return;
+    }
+
+    const chat = await api(`/api/chats/${state.activeChatId}`);
+    const nextSignature = chatSignature(chat);
+    if (nextSignature !== previousSignature) {
+      state.activeChat = chat;
+      renderActiveChat();
+    }
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function chatSignature(chat) {
+  if (!chat) {
+    return "";
+  }
+  const messages = chat.messages || [];
+  const last = messages[messages.length - 1];
+  return `${chat.id}:${chat.updatedAt || ""}:${messages.length}:${last?.id || ""}`;
+}
+
+function handleViewportChange() {
+  if (isNarrowLayout()) {
+    if (elements.appShell.classList.contains("sidebar-collapsed")) {
+      elements.appShell.classList.remove("sidebar-collapsed");
+    }
+    if (!state.sidebarOpen) {
+      setSidebarOpen(false);
+      return;
+    }
+  }
+  applySidebarState();
+}
+
+function setSidebarOpen(open) {
+  state.sidebarOpen = open;
+  applySidebarState();
+}
+
+function applySidebarState() {
+  const narrow = isNarrowLayout();
+
+  if (narrow) {
+    elements.appShell.classList.toggle("sidebar-open", state.sidebarOpen);
+    elements.appShell.classList.remove("sidebar-collapsed");
+    elements.sidebarOverlay.classList.toggle("visible", state.sidebarOpen);
+    return;
+  }
+
+  elements.appShell.classList.remove("sidebar-open");
+  elements.sidebarOverlay.classList.remove("visible");
+  elements.appShell.classList.toggle("sidebar-collapsed", !state.sidebarOpen);
+}
+
+function isNarrowLayout() {
+  return window.innerWidth <= 960;
 }
 
 async function api(path, options = {}) {
@@ -742,4 +907,14 @@ function isGeminiModel(value) {
 function modelLabel(modelID) {
   const models = state.bootstrap?.models?.availableModels || [];
   return models.find(item => item.id === modelID)?.label || modelID;
+}
+
+function userInitials() {
+  const username = state.bootstrap?.user?.username || "You";
+  return username
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(item => item[0].toUpperCase())
+    .join("");
 }

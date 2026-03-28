@@ -8,30 +8,28 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="sidebar">
-        <div class="brand-card">
-          <div class="brand-mark">GA</div>
-          <div>
-            <p class="eyebrow">Local-first AI</p>
-            <h1>Gopher AI</h1>
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+    <div id="app-shell" class="app-shell">
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-top">
+          <div class="brand-card">
+            <div class="brand-mark">
+              <span class="assistant-blob assistant-blob-large"></span>
+            </div>
+            <div>
+              <p class="eyebrow">Local-first AI</p>
+              <h1>Gopher AI</h1>
+            </div>
           </div>
+
+          <button id="new-chat-button" class="primary-button">New Chat</button>
+
+          <label class="search-shell">
+            <span>Search chats</span>
+            <input id="chat-search" type="search" placeholder="Search your chats..." />
+          </label>
         </div>
-
-        <button id="new-chat-button" class="primary-button">New Chat</button>
-
-        <label class="search-shell">
-          <span>Search chats</span>
-          <input id="chat-search" type="search" placeholder="Go, concurrency, game dev..." />
-        </label>
-
-        <section class="status-panel">
-          <div class="status-header">
-            <span>Inference</span>
-            <span id="quota-chip" class="status-chip">Quota sync</span>
-          </div>
-          <div id="model-status-list" class="status-list"></div>
-        </section>
 
         <section class="chat-list-panel">
           <div class="section-title-row">
@@ -44,19 +42,24 @@
 
       <main class="main-panel">
         <header class="topbar">
-          <div>
-            <p class="eyebrow">Sleepy Dark Blue Aquarium</p>
-            <h2 id="main-title">Welcome to Gopher AI</h2>
+          <div class="topbar-left">
+            <button id="sidebar-toggle" class="icon-button" type="button" aria-label="Toggle sidebar">☰</button>
+            <div>
+              <p class="eyebrow">Sleepy Dark Blue Aquarium</p>
+              <h2 id="main-title">Welcome to Gopher AI</h2>
+            </div>
           </div>
+
           <div class="topbar-actions">
-            <button id="train-chat-button" class="ghost-button">Train Chat</button>
-            <button id="training-center-button" class="ghost-button">Training</button>
-            <button id="refresh-button" class="ghost-button">Refresh</button>
+            <button id="train-chat-button" class="ghost-button" type="button">Train Chat</button>
+            <button id="training-center-button" class="ghost-button" type="button">Training</button>
           </div>
         </header>
 
         <section id="welcome-screen" class="welcome-screen">
-          <div class="welcome-orb"></div>
+          <div class="welcome-orb-wrap">
+            <div class="welcome-orb"></div>
+          </div>
           <p class="eyebrow">Hi there</p>
           <h3 id="welcome-title">Welcome to Gopher AI</h3>
           <p id="welcome-subtitle" class="welcome-copy">What are we gonna do today?</p>
@@ -69,25 +72,47 @@
         </section>
 
         <section id="chat-view" class="chat-view hidden">
+          <div id="chat-empty-state" class="chat-empty-state hidden">
+            <div class="welcome-orb-wrap compact">
+              <div class="welcome-orb"></div>
+            </div>
+            <p class="eyebrow">New chat</p>
+            <h3>Start a fresh conversation</h3>
+            <p class="welcome-copy">Ask Gopher AI to build, explain, review, or explore anything you want.</p>
+            <div class="quick-prompts">
+              <button class="quick-prompt" data-prompt="Help me design a local-first AI architecture in Go.">Design architecture</button>
+              <button class="quick-prompt" data-prompt="Review this Go code and point out the main risks.">Review code</button>
+              <button class="quick-prompt" data-prompt="Plan the next milestones for this product.">Plan milestones</button>
+              <button class="quick-prompt" data-prompt="Explain this bug and propose a fix.">Explain a bug</button>
+            </div>
+          </div>
+
           <div id="message-list" class="message-list"></div>
         </section>
 
         <section class="composer-shell">
           <div id="pending-attachments" class="pending-attachments"></div>
+
           <div class="composer-toolbar">
             <label class="model-picker">
               <span>Model</span>
               <select id="model-select"></select>
             </label>
-            <label class="file-button ghost-button">
-              <input id="attachment-input" type="file" multiple />
-              <span>Attachment</span>
-            </label>
+
+            <div class="composer-toolbar-right">
+              <span id="quota-chip" class="status-chip">Quota unavailable</span>
+              <label class="file-button ghost-button">
+                <input id="attachment-input" type="file" multiple />
+                <span>Attachment</span>
+              </label>
+            </div>
           </div>
+
           <div class="composer-row">
-            <textarea id="message-input" rows="1" placeholder="Type a message for Gopher AI..."></textarea>
-            <button id="send-button" class="send-button">Send</button>
+            <textarea id="message-input" rows="1" placeholder="Message Gopher AI..."></textarea>
+            <button id="send-button" class="send-button" type="button">Send</button>
           </div>
+
           <div class="composer-footer">
             <span id="composer-status">Ready.</span>
           </div>
