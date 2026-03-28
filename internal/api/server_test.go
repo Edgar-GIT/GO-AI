@@ -128,3 +128,46 @@ func TestSystemSettingsUpdatesGeminiConfiguration(t *testing.T) {
 		t.Fatalf("saved primary model = %q", saved.Models.Primary)
 	}
 }
+
+func TestQuotaResetEndpoint(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cfg := config.Default(root)
+	cfg.Training.AutoRun = false
+	if err := cfg.EnsureDirectories(); err != nil {
+		t.Fatalf("ensure directories: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	quotaTracker, err := gemini.NewRateLimiter(cfg.Paths.QuotaTrackingFile, gemini.Limits{
+		DailyQuota:   cfg.Gemini.DailyQuota,
+		RequestLimit: cfg.Gemini.RequestLimitDaily,
+		Cooldown:     time.Duration(cfg.Gemini.RequestCooldownSeconds) * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new quota tracker: %v", err)
+	}
+	if err := quotaTracker.LogUsage(gemini.ModelGemini3FlashPreview, cfg.Gemini.DailyQuota, time.Second, true, nil); err != nil {
+		t.Fatalf("log usage: %v", err)
+	}
+
+	chatStore := storage.NewChatStore(cfg.Paths.ChatsDir, cfg.Paths.TrashDir)
+	attachmentService := attachments.NewService(cfg.Paths.AttachmentsTempDir, cfg.Paths.AttachmentsMetaDir, cfg.Features.AttachmentMaxSize)
+	inferenceService := inference.NewService(cfg, nil, nil, logger)
+	trainingService := training.NewService(cfg, chatStore, nil, logger)
+	defer trainingService.Close()
+	server := NewServer(cfg, logger, chatStore, attachmentService, inferenceService, trainingService, nil, quotaTracker, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/system/quota/reset", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("quota reset status: got %d want %d body=%s", res.Code, http.StatusOK, res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), `"totalTokensUsedToday":0`) {
+		t.Fatalf("quota reset response did not clear usage: %s", res.Body.String())
+	}
+}

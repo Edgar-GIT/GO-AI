@@ -73,6 +73,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/app/bootstrap", s.handleBootstrap)
 	s.mux.HandleFunc("GET /api/system/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/system/quota", s.handleQuota)
+	s.mux.HandleFunc("POST /api/system/quota/reset", s.handleQuotaReset)
 	s.mux.HandleFunc("POST /api/system/settings", s.handleSystemSettings)
 	s.mux.HandleFunc("GET /api/models", s.handleModels)
 	s.mux.HandleFunc("GET /api/training/status", s.handleTrainingStatus)
@@ -143,8 +144,18 @@ func (s *Server) handleQuota(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.quota.Snapshot())
 }
 
+func (s *Server) handleQuotaReset(w http.ResponseWriter, r *http.Request) {
+	if err := s.quota.Reset(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, s.quota.Snapshot())
+}
+
 func (s *Server) handleSystemSettings(w http.ResponseWriter, r *http.Request) {
 	cfg := s.currentConfig()
+	previousGeminiKey := cfg.APIKeys.Gemini
 
 	var req struct {
 		APIKeys *struct {
@@ -173,6 +184,13 @@ func (s *Server) handleSystemSettings(w http.ResponseWriter, r *http.Request) {
 	if err := cfg.Save(); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	if req.APIKeys != nil && req.APIKeys.Gemini != nil && strings.TrimSpace(previousGeminiKey) != cfg.APIKeys.Gemini {
+		if err := s.quota.Reset(); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 
 	var geminiClient *gemini.Client

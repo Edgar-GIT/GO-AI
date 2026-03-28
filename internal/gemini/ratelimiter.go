@@ -134,6 +134,14 @@ func (rl *RateLimiter) Snapshot() QuotaTracking {
 	return state
 }
 
+func (rl *RateLimiter) Reset() error {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	rl.state = defaultQuotaState(rl.limits, rl.now().UTC())
+	return rl.saveLocked()
+}
+
 func (rl *RateLimiter) load() error {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()

@@ -9,6 +9,7 @@ const state = {
   typingIndicator: null,
   previousModelSelection: "gopher-ai",
   pendingGeminiModel: null,
+  pendingGeminiReason: "",
   sidebarOpen: window.innerWidth > 960,
   autoRefreshTimer: null,
 };
@@ -48,8 +49,11 @@ const elements = {
   trainingRefreshButton: document.querySelector("#training-refresh-button"),
   trainingStatusList: document.querySelector("#training-status-list"),
   geminiDialog: document.querySelector("#gemini-dialog"),
+  geminiCopy: document.querySelector("#gemini-copy"),
   geminiCloseButton: document.querySelector("#gemini-close-button"),
   geminiCancelButton: document.querySelector("#gemini-cancel-button"),
+  geminiResetQuotaButton: document.querySelector("#gemini-reset-quota-button"),
+  geminiUseSavedButton: document.querySelector("#gemini-use-saved-button"),
   geminiSaveButton: document.querySelector("#gemini-save-button"),
   geminiAPIKeyInput: document.querySelector("#gemini-api-key-input"),
   messageTemplate: document.querySelector("#message-template"),
@@ -109,6 +113,8 @@ function bindEvents() {
 
   elements.geminiCloseButton.addEventListener("click", () => closeGeminiDialog(false));
   elements.geminiCancelButton.addEventListener("click", () => closeGeminiDialog(false));
+  elements.geminiResetQuotaButton.addEventListener("click", resetLocalGeminiQuota);
+  elements.geminiUseSavedButton.addEventListener("click", useSavedGeminiKey);
   elements.geminiSaveButton.addEventListener("click", saveGeminiAPIKey);
   elements.geminiDialog.addEventListener("cancel", event => {
     event.preventDefault();
@@ -204,19 +210,34 @@ function renderChatList() {
   }
 
   state.chats.forEach(chat => {
+    const shell = document.createElement("article");
+    shell.className = "chat-item-shell";
+    if (chat.id === state.activeChatId) {
+      shell.classList.add("active");
+    }
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "chat-item";
-    if (chat.id === state.activeChatId) {
-      button.classList.add("active");
-    }
+    button.className = "chat-item-button";
     button.innerHTML = `
       <div class="chat-item-title">${escapeHTML(chat.title || "New Chat")}</div>
       <div class="chat-item-meta">${formatRelativeDate(chat.updatedAt)}</div>
       <div class="chat-item-preview">${escapeHTML(chat.lastMessagePreview || "No messages yet")}</div>
     `;
     button.addEventListener("click", () => openChat(chat.id));
-    elements.chatList.appendChild(button);
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "chat-delete-button";
+    deleteButton.setAttribute("aria-label", `Delete ${chat.title || "chat"}`);
+    deleteButton.textContent = "Delete";
+    deleteButton.addEventListener("click", async event => {
+      event.stopPropagation();
+      await deleteChat(chat.id);
+    });
+
+    shell.appendChild(button);
+    shell.appendChild(deleteButton);
+    elements.chatList.appendChild(shell);
   });
 }
 
@@ -401,7 +422,7 @@ function renderModels(modelsSnapshot) {
 async function handleModelSelectionChange(event) {
   const selectedModel = event.target.value || "gopher-ai";
 
-  if (isGeminiModel(selectedModel) && !state.bootstrap?.models?.geminiConfigured) {
+  if (isGeminiModel(selectedModel)) {
     openGeminiDialog(selectedModel);
     return;
   }
@@ -417,11 +438,21 @@ async function handleModelSelectionChange(event) {
   }
 }
 
-function openGeminiDialog(selectedModel) {
+function openGeminiDialog(selectedModel, reason = "") {
   state.pendingGeminiModel = selectedModel;
+  state.pendingGeminiReason = String(reason || "");
   elements.geminiAPIKeyInput.value = "";
-  elements.geminiDialog.showModal();
-  window.setTimeout(() => elements.geminiAPIKeyInput.focus(), 40);
+  renderGeminiDialog();
+  if (!elements.geminiDialog.open) {
+    elements.geminiDialog.showModal();
+  }
+  window.setTimeout(() => {
+    if (!elements.geminiUseSavedButton.hidden) {
+      elements.geminiUseSavedButton.focus();
+      return;
+    }
+    elements.geminiAPIKeyInput.focus();
+  }, 40);
 }
 
 function closeGeminiDialog(saved) {
@@ -435,6 +466,7 @@ function closeGeminiDialog(saved) {
   }
 
   state.pendingGeminiModel = null;
+  state.pendingGeminiReason = "";
 }
 
 async function saveGeminiAPIKey() {
@@ -461,6 +493,57 @@ async function saveGeminiAPIKey() {
     setComposerStatus(error.message || "Could not save the Gemini API key.");
   } finally {
     elements.geminiSaveButton.disabled = false;
+  }
+}
+
+function renderGeminiDialog() {
+  const selectedModel = state.pendingGeminiModel || elements.modelSelect.value || geminiFallbackModel();
+  const configured = Boolean(state.bootstrap?.models?.geminiConfigured);
+  const reason = state.pendingGeminiReason ? ` Latest issue: ${state.pendingGeminiReason}` : "";
+
+  if (configured) {
+    elements.geminiCopy.textContent = `${modelLabel(selectedModel)} is selected. You can keep using the saved Gemini key or replace it with a new one.${reason}`;
+  } else {
+    elements.geminiCopy.textContent = `${modelLabel(selectedModel)} needs a Google API key before Gopher AI can use it.${reason}`;
+  }
+
+  elements.geminiUseSavedButton.hidden = !configured;
+}
+
+async function useSavedGeminiKey() {
+  const selectedModel = state.pendingGeminiModel || elements.modelSelect.value || geminiFallbackModel();
+  elements.geminiUseSavedButton.disabled = true;
+  try {
+    await saveSystemSettings({
+      models: { primary: selectedModel },
+    });
+    state.previousModelSelection = selectedModel;
+    closeGeminiDialog(true);
+    setComposerStatus(`${modelLabel(selectedModel)} selected.`);
+  } catch (error) {
+    console.error(error);
+    setComposerStatus(error.message || "Could not activate Gemini with the saved key.");
+  } finally {
+    elements.geminiUseSavedButton.disabled = false;
+  }
+}
+
+async function resetLocalGeminiQuota() {
+  elements.geminiResetQuotaButton.disabled = true;
+  try {
+    const quota = await api("/api/system/quota/reset", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    state.bootstrap = state.bootstrap || {};
+    state.bootstrap.quota = quota;
+    renderQuota(quota);
+    setComposerStatus("Local Gemini quota was reset.");
+  } catch (error) {
+    console.error(error);
+    setComposerStatus(error.message || "Could not reset the local Gemini quota.");
+  } finally {
+    elements.geminiResetQuotaButton.disabled = false;
   }
 }
 
@@ -639,14 +722,48 @@ async function sendMessage() {
     }
   } catch (error) {
     console.error(error);
-    if (isGeminiModel(elements.modelSelect.value) && !state.bootstrap?.models?.geminiConfigured) {
-      openGeminiDialog(elements.modelSelect.value);
+    if (shouldOpenGeminiDialog(error, elements.modelSelect.value)) {
+      openGeminiDialog(geminiModelForError(elements.modelSelect.value), error.message || "");
     }
     setComposerStatus(error.message || "Could not send message.");
   } finally {
     removeTypingIndicator();
     state.sending = false;
     updateSendingState();
+  }
+}
+
+async function deleteChat(chatId) {
+  const chat = state.chats.find(item => item.id === chatId);
+  const label = chat?.title || "this chat";
+  if (!window.confirm(`Delete ${label}?`)) {
+    return;
+  }
+
+  const wasActive = chatId === state.activeChatId;
+
+  try {
+    await api(`/api/chats/${chatId}`, {
+      method: "DELETE",
+    });
+    await refreshChats();
+
+    if (wasActive) {
+      state.activeChatId = null;
+      state.activeChat = null;
+      if (state.chats.length > 0) {
+        await openChat(state.chats[0].id);
+      } else {
+        renderWelcome();
+      }
+    } else {
+      renderChatList();
+    }
+
+    setComposerStatus("Chat deleted.");
+  } catch (error) {
+    console.error(error);
+    setComposerStatus(error.message || "Could not delete the chat.");
   }
 }
 
@@ -872,6 +989,36 @@ function formatRelativeDate(value) {
   }
   const date = new Date(value);
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+function shouldOpenGeminiDialog(error, selectedModel) {
+  if (isGeminiModel(selectedModel)) {
+    return true;
+  }
+
+  const message = String(error?.message || "").toLowerCase();
+  return [
+    "gemini",
+    "api key",
+    "quota",
+    "rate limit",
+    "rate limited",
+    "permission",
+    "unauthorized",
+    "forbidden",
+    "429",
+  ].some(part => message.includes(part));
+}
+
+function geminiModelForError(selectedModel) {
+  if (isGeminiModel(selectedModel)) {
+    return selectedModel;
+  }
+  return geminiFallbackModel();
+}
+
+function geminiFallbackModel() {
+  return state.bootstrap?.models?.fallback || "gemini-3.1-pro-preview";
 }
 
 function formatBytes(bytes) {

@@ -50,3 +50,35 @@ func TestRateLimiterCooldownAndReset(t *testing.T) {
 		t.Fatalf("expected quota reset on next day: %v", err)
 	}
 }
+
+func TestRateLimiterManualReset(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)
+	rl, err := newRateLimiter(filepath.Join(t.TempDir(), "quota_tracking.json"), Limits{
+		DailyQuota:   10,
+		RequestLimit: 2,
+		Cooldown:     time.Minute,
+	}, func() time.Time {
+		return now
+	})
+	if err != nil {
+		t.Fatalf("new rate limiter: %v", err)
+	}
+
+	if err := rl.LogUsage(ModelGemini3FlashPreview, 10, time.Second, true, nil); err != nil {
+		t.Fatalf("log usage: %v", err)
+	}
+
+	if err := rl.CanMakeRequest(); err == nil {
+		t.Fatal("expected quota error before reset")
+	}
+
+	if err := rl.Reset(); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+
+	if err := rl.CanMakeRequest(); err != nil {
+		t.Fatalf("expected request to be allowed after manual reset: %v", err)
+	}
+}

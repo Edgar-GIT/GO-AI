@@ -128,6 +128,7 @@ button {
   flex-direction: column;
   gap: 1rem;
   min-width: 0;
+  height: 100%;
   min-height: 0;
   padding: 1rem;
   overflow: hidden;
@@ -145,6 +146,8 @@ button {
 .main-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  position: relative;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -197,6 +200,8 @@ button {
 .quick-prompt,
 .file-button,
 .icon-button,
+.chat-item-button,
+.chat-delete-button,
 .copy-button,
 .attachment-pill {
   border-radius: 18px;
@@ -217,6 +222,8 @@ button {
 .quick-prompt:hover,
 .file-button:hover,
 .icon-button:hover,
+.chat-item-button:hover,
+.chat-delete-button:hover,
 .copy-button:hover,
 .attachment-pill:hover,
 .chat-item:hover {
@@ -279,6 +286,7 @@ button {
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
   padding: 1rem;
   border-radius: 22px;
   background: rgba(0, 10, 34, 0.42);
@@ -299,12 +307,21 @@ button {
   flex-direction: column;
   gap: 0.75rem;
   min-height: 0;
+  height: 100%;
   overflow: auto;
-  padding-right: 0.15rem;
+  padding-right: 0.35rem;
   overscroll-behavior: contain;
 }
 
-.chat-item {
+.chat-item-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: stretch;
+}
+
+.chat-item-button {
+  min-width: 0;
   padding: 0.92rem 1rem;
   border-radius: 18px;
   background: rgba(5, 20, 58, 0.72);
@@ -313,10 +330,25 @@ button {
   color: inherit;
 }
 
-.chat-item.active {
+.chat-item-shell.active .chat-item-button {
   border-color: var(--line-blue-strong);
   background: rgba(7, 30, 84, 0.88);
   box-shadow: 0 0 22px rgba(41, 212, 255, 0.14);
+}
+
+.chat-delete-button {
+  align-self: center;
+  min-width: 4.8rem;
+  padding: 0.8rem 0.85rem;
+  border-radius: 16px;
+  background: rgba(34, 8, 28, 0.68);
+  border: 1px solid rgba(255, 128, 171, 0.2);
+  color: #ffd4e5;
+}
+
+.chat-delete-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 22px rgba(255, 128, 171, 0.18);
 }
 
 .chat-item-title {
@@ -410,7 +442,9 @@ button {
 .welcome-screen,
 .chat-view {
   min-height: 0;
-  overflow: auto;
+  position: relative;
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
 }
 
@@ -418,23 +452,35 @@ button {
   display: grid;
   place-content: center;
   gap: 1rem;
-  padding: 2rem;
+  padding: clamp(1.5rem, 5vh, 3.25rem);
   text-align: center;
+  isolation: isolate;
 }
 
 .chat-view {
   display: flex;
   flex-direction: column;
   padding: 1.15rem;
+  isolation: isolate;
 }
 
 .chat-empty-state {
   display: grid;
   place-content: center;
   gap: 1rem;
-  min-height: 100%;
+  width: min(52rem, 100%);
+  min-height: calc(100% - 0.5rem);
+  margin: 0 auto;
   text-align: center;
-  padding: 1rem 0.4rem 2rem;
+  padding: clamp(1rem, 6vh, 4rem) 0.4rem 3rem;
+  position: relative;
+  isolation: isolate;
+}
+
+.welcome-screen > :not(.welcome-orb-wrap),
+.chat-empty-state > :not(.welcome-orb-wrap) {
+  position: relative;
+  z-index: 2;
 }
 
 .welcome-copy {
@@ -447,6 +493,19 @@ button {
 .welcome-orb-wrap {
   display: grid;
   place-items: center;
+  position: relative;
+  z-index: 1;
+  padding: 0.4rem 0 0.9rem;
+}
+
+.welcome-orb-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 12% -8% -8% -8%;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(41, 212, 255, 0.18), transparent 72%);
+  filter: blur(28px);
+  z-index: -1;
 }
 
 .welcome-orb-wrap.compact .welcome-orb {
@@ -464,6 +523,8 @@ button {
     linear-gradient(135deg, rgba(10, 120, 255, 0.86), rgba(41, 212, 255, 0.22));
   box-shadow: 0 0 80px rgba(41, 212, 255, 0.16);
   animation: orbFloat 7s ease-in-out infinite;
+  position: relative;
+  z-index: 1;
 }
 
 .quick-prompts {
@@ -487,6 +548,8 @@ button {
   flex: 1 1 auto;
   flex-direction: column;
   gap: 1rem;
+  width: min(54rem, 100%);
+  margin: 0 auto;
   min-height: min-content;
   padding-bottom: 0.2rem;
 }
@@ -1001,6 +1064,14 @@ button {
 
   .chat-list-panel {
     min-height: 16rem;
+  }
+
+  .chat-item-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chat-delete-button {
+    width: 100%;
   }
 
   .training-grid,

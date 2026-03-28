@@ -190,7 +190,7 @@
           <button id="gemini-close-button" class="ghost-button" value="cancel">Close</button>
         </div>
 
-        <p class="gemini-copy">This Gemini model needs a Google API key. Save it once and Gopher AI will use it right away.</p>
+        <p id="gemini-copy" class="gemini-copy">This Gemini model needs a Google API key. Save it once and Gopher AI will use it right away.</p>
 
         <label class="search-shell">
           <span>Gemini API Key</span>
@@ -198,6 +198,8 @@
         </label>
 
         <div class="gemini-dialog-actions">
+          <button id="gemini-reset-quota-button" class="ghost-button" type="button">Reset Local Quota</button>
+          <button id="gemini-use-saved-button" class="ghost-button" type="button">Use Saved Key</button>
           <button id="gemini-cancel-button" class="ghost-button" type="button">Cancel</button>
           <button id="gemini-save-button" class="primary-button" type="button">Save and Use Gemini</button>
         </div>
