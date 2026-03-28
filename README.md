@@ -97,6 +97,8 @@ export GEMINI_API_KEY="your_key_here"
 ./build/linux/gopher-ai
 ```
 
+The executable starts the local backend and opens the Gopher AI interface automatically in your browser.
+
 ### Windows
 
 ```powershell
@@ -104,11 +106,7 @@ $env:GEMINI_API_KEY="your_key_here"
 .\build\windows\gopher-ai.exe
 ```
 
-Then open:
-
-```text
-http://127.0.0.1:8080
-```
+The executable starts the local backend and opens the Gopher AI interface automatically in your browser.
 
 ### Android
 

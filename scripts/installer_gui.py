@@ -3,6 +3,7 @@
 import os
 import queue
 import shutil
+import tempfile
 import subprocess
 import sys
 import threading
@@ -394,12 +395,24 @@ class InstallerWizard:
         install_dir.mkdir(parents=True, exist_ok=True)
 
     def copy_payload(self, install_dir):
-        shutil.copy2(self.required_files["binary"], install_dir / self.binary_name)
-        shutil.copy2(self.required_files["icon"], install_dir / "ai.ico")
-        shutil.copy2(self.required_files["trainer"], install_dir / "train_lora.py")
+        self.copy_into_place(self.required_files["binary"], install_dir / self.binary_name)
+        self.copy_into_place(self.required_files["icon"], install_dir / "ai.ico")
+        self.copy_into_place(self.required_files["trainer"], install_dir / "train_lora.py")
         if not self.is_windows:
             os.chmod(install_dir / self.binary_name, 0o755)
             os.chmod(install_dir / "train_lora.py", 0o755)
+
+    def copy_into_place(self, source, target):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_path = tempfile.mkstemp(prefix=target.name + ".", suffix=".tmp", dir=str(target.parent))
+        os.close(fd)
+        temp_target = Path(temp_path)
+        try:
+            shutil.copy2(source, temp_target)
+            os.replace(temp_target, target)
+        finally:
+            if temp_target.exists():
+                temp_target.unlink()
 
     def safe_step(self, label, action):
         try:
