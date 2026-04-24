@@ -4,6 +4,8 @@
 
 # Gopher AI
 
+DISCLAIMER: This project was developed with the help of AI.
+
 Gopher AI is a local-first AI assistant built mainly in Go.
 
 It gives you:
